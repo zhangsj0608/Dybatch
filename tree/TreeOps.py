@@ -18,22 +18,48 @@ def construct_merged_tree(leaves_encodings_of_pptrees_list):
                 # leave_encoding 大
                 index_merged_tree += 1
 
-            if index_merged_tree == len(merged_tree_leaves_encodings):  # 最大树已经到了，则将当前树的剩余部分复制到最大树
+            if index_merged_tree == len(merged_tree_leaves_encodings):  # 最大树已经到了，则将当最大树的节点前树的剩余部分复制到最大树
                 merged_tree_leaves_encodings.extend(tree_leaves_encodings[leave_encoding_index:])
                 break
 
-            merged_encoding = merged_tree_leaves_encodings[index_merged_tree]  # 最大树的节点
+            merged_encoding = merged_tree_leaves_encodings[index_merged_tree]  #
 
             if compare_encodings(leave_encoding, merged_encoding) == -1:  # leave_encoding 小
                 merged_tree_leaves_encodings = merged_tree_leaves_encodings[0: index_merged_tree] + [leave_encoding] + \
                     merged_tree_leaves_encodings[index_merged_tree:]  # 插入当前的最大树的位置
             else:  # 相等
-                merged_tree_leaves_encodings[index_merged_tree] = compare_encodings(leave_encoding, merged_encoding)
+                common_encoding = compare_encodings(leave_encoding, merged_encoding)
                 # 将相等的节点换为长度较长的节点
+                merged_tree_leaves_encodings[index_merged_tree] = common_encoding
 
             index_merged_tree += 1  # 最大树的标记右移
 
     return merged_tree_leaves_encodings
+
+
+def extend_tree_encodings(pptree_encoding_list, sentence_list, merged_tree_encoding):
+    """
+    produce a list of extended tree_encodings for the pptrees with respect to the merged encoding
+    :param pptree_encoding_list: a list of elements, each of which is the original leave encodings for a tree
+    :param merged_tree_encoding: the merged tree encodings
+    :return: a list of elements, each element is a dict representing a tree/sentence.
+            encoding is the key, and word is the value in each dict.
+    """
+    encoding_word_dict_list = list()
+    for aTree, sentence in zip(pptree_encoding_list, sentence_list):
+        encoding_word_dict = dict()  # encoding-word字典，为一个句子
+        encoding_word_dict_list.append(encoding_word_dict)  # 句子的列表
+        idx_atree = 0
+        for idx_merged in range(len(merged_tree_encoding)):
+            if idx_atree == len(aTree):
+                break
+            if compare_encodings(merged_tree_encoding[idx_merged], aTree[idx_atree]) == -1:  # atree节点更大，遍历
+                continue
+            encoding = merged_tree_encoding[idx_merged]  # 相等，补长
+            aTree[idx_atree] = encoding
+            encoding_word_dict[encoding] = sentence[idx_atree]  # 将补长的encoding作为键，词作为值，构建句子字典
+            idx_atree += 1
+    return encoding_word_dict_list
 
 
 def compare_encodings(str0, str1):
@@ -59,11 +85,19 @@ def compare_encodings(str0, str1):
 
 def main():
     tree_list = [['']] * 3
-    tree_list[1] = ['0', '100', '101', '110', '1110', '11110', '111110', '111111']
-    tree_list[0] = ['00', '010', '011', '10', '110', '1110', '11110', '111110', '111111']
+    tree_list[0] = ['0', '100', '101', '110', '1110', '11110', '111110', '111111']
+    tree_list[1] = ['00', '010', '011', '10', '110', '1110', '11110', '111110', '111111']
     tree_list[2] = ['0', '100', '101', '110', '1110', '11110', '11111']
+    
+    sentence_list = [['']] * 3
+    sentence_list[0] = ['a0', 'b0', 'c0', 'd0', 'e0', 'f0', 'g0', 'h0']
+    sentence_list[1] = ['a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1', 'i1']
+    sentence_list[2] = ['a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2']
 
-    print(construct_merged_tree(tree_list))
+    merged_tree = construct_merged_tree(tree_list)
+    extended_tree_list  = extend_tree_encodings(tree_list, sentence_list, merged_tree)
+
+    print(extended_tree_list)
 
 
 if __name__ == '__main__':
