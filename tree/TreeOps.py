@@ -51,14 +51,20 @@ def extend_tree_encodings(pptree_encoding_list, sentence_list, merged_tree_encod
         encoding_word_dict_list.append(encoding_word_dict)  # 句子的列表
         idx_atree = 0
         for idx_merged in range(len(merged_tree_encoding)):
-            if idx_atree == len(aTree):
+            if idx_atree == len(aTree):  # atree 到了结尾，将merged tree对应的节点补充上
+                for encoding in merged_tree_encoding[idx_merged:]:
+                    encoding_word_dict[encoding] = None
                 break
             if compare_encodings(merged_tree_encoding[idx_merged], aTree[idx_atree]) == -1:  # atree节点更大，遍历
-                continue
-            encoding = merged_tree_encoding[idx_merged]  # 相等，补长
-            aTree[idx_atree] = encoding
-            encoding_word_dict[encoding] = sentence[idx_atree]  # 将补长的encoding作为键，词作为值，构建句子字典
-            idx_atree += 1
+                candidate_word = None  # 词
+                encoding = merged_tree_encoding[idx_merged]  # 相等，补长
+                encoding_word_dict[encoding] = candidate_word
+            else:
+                candidate_word = sentence[idx_atree]  # 词
+                encoding = merged_tree_encoding[idx_merged]  # 相等，补长
+                # aTree[idx_atree] = encoding
+                encoding_word_dict[encoding] = candidate_word  # 将补长的encoding作为键，词作为值，构建句子字典
+                idx_atree += 1
     return encoding_word_dict_list
 
 
@@ -95,9 +101,10 @@ def main():
     sentence_list[2] = ['a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2']
 
     merged_tree = construct_merged_tree(tree_list)
-    extended_tree_list  = extend_tree_encodings(tree_list, sentence_list, merged_tree)
+    extended_tree_list = extend_tree_encodings(tree_list, sentence_list, merged_tree)
 
-    print(extended_tree_list)
+    for i in extended_tree_list:
+        print(i)
 
 
 if __name__ == '__main__':
