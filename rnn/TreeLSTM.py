@@ -8,9 +8,10 @@ def tree_lstm(narry_lstm_cell, parent_idx, batch_size, words):
     构造n-array lstm tree树
     :param narry_lstm_cell:  lstm cell
     :param parent_idx: 父节点列表的Tensor, 形状[total_len], 其中total_len = 2 * time_steps - 1
-    :param words: 句子对应的单词的embedding的tensor, 形状[time_steps, batch_size, embedding_size]
+    :param words: 句子对应的单词的embedding的tensor, 形状[batch_size, time_steps, embedding_size]
     :return:
     """
+    words = tf.transpose(words, perm=[1, 0, 2])
     total_len = tf.shape(parent_idx)[0]  # 17
     time_steps = tf.shape(words)[0]  # 9
     # batch_size = tf.shape(words)[1]
@@ -20,7 +21,7 @@ def tree_lstm(narry_lstm_cell, parent_idx, batch_size, words):
     parent_idx_ta = tf.TensorArray(tf.int32, size=total_len, clear_after_read=False)
     parent_idx_ta = parent_idx_ta.unstack(parent_idx)  # 父节点对应的tensor的列表
 
-    words_ta = tf.TensorArray(tf.int32, size=time_steps, clear_after_read=False)
+    words_ta = tf.TensorArray(tf.float32, size=time_steps, clear_after_read=False)
     words_ta = words_ta.unstack(words)
 
     states_ta = tf.TensorArray(tf.float32, size=time_steps - 1, element_shape=[batch_size, hidden_size * 2],
@@ -107,11 +108,11 @@ def tree_lstm(narry_lstm_cell, parent_idx, batch_size, words):
         # 如果idx小于句长，则表明是叶节点，输入为单词，状态为0；或如果大于句长，表明为中间节点，输入为0，状态为记录的状态
         l_word, l_state = tf.cond(l_idx1 < time_steps,
                           lambda: (words_ta.read(l_idx1), tf.zeros([batch_size, hidden_size * 2], dtype=tf.float32)),
-                          lambda: (tf.zeros([batch_size, embedding_size], dtype=tf.int32), state_ta_.read(l_idx1 - time_steps)))
+                          lambda: (tf.zeros([batch_size, embedding_size], dtype=tf.float32), state_ta_.read(l_idx1 - time_steps)))
 
         r_word, r_state = tf.cond(r_idx1 < time_steps,
                           lambda: (words_ta.read(r_idx1), tf.zeros([batch_size, hidden_size * 2], dtype=tf.float32)),
-                          lambda: (tf.zeros([batch_size, embedding_size], dtype=tf.int32), state_ta_.read(r_idx1 - time_steps)))
+                          lambda: (tf.zeros([batch_size, embedding_size], dtype=tf.float32), state_ta_.read(r_idx1 - time_steps)))
 
         # 计算节点状态
         inputs = (tf.cast(l_word, tf.float32), tf.cast(r_word, tf.float32))
@@ -137,19 +138,21 @@ def tree_lstm(narry_lstm_cell, parent_idx, batch_size, words):
 
 def main():
 
-    p = tf.constant([15, 15, 14, 13, 10, 10, 9, 9, 12, 11, 11, 12, 13, 14, 16, 16, -1])
-    w = tf.constant([[[0, 0, 0, 0, 0, 0, 0, 0, 1]], [[0, 0, 0, 0, 0, 0, 0, 1, 0]], [[0, 0, 0, 0, 0, 0, 1, 0, 0]],
-                     [[0, 0, 0, 0, 0, 1, 0, 0, 0]], [[0, 0, 0, 0, 1, 0, 0, 0, 0]], [[0, 0, 0, 1, 0, 0, 0, 0, 0]],
-                     [[0, 0, 1, 0, 0, 0, 0, 0, 0]], [[0, 1, 0, 0, 0, 0, 0, 0, 0]], [[1, 0, 0, 0, 0, 0, 0, 0, 0]]])
+    p_arr = [15, 15, 14, 13, 10, 10, 9, 9, 12, 11, 11, 12, 13, 14, 16, 16, -1]
+    w_arr = [[[0, 0, 0, 0, 0, 0, 0, 0, 1], [0, 0, 0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 0, 1, 0, 0],
+                     [0, 0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0, 0, 0],
+                     [0, 0, 1, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0, 0, 0, 0]]]
 
+    p_pl = tf.placeholder(tf.int32, shape=[None], name='p_pl')
+    w_pl = tf.placeholder(tf.int32, shape=[1, None, 9], name='w_pl')
     with tf.variable_scope('tree_lstm') as scope:
         narry_cell = NarryLSTMCell(hidden_size=10, embedding_size=9)
         narry_cell.build()
-        h, c = tree_lstm(narry_cell, p, 1, w)
+        h, c = tree_lstm(narry_cell, p_pl, 1, w_pl)
 
     with tf.Session() as tfs:
         tf.global_variables_initializer().run()
-        h_, c_ = tfs.run([h, c])
+        h_, c_ = tfs.run([h, c], feed_dict={p_pl: p_arr, w_pl: w_arr})
         print('h_:', h_)
         print('c_:', c_)
 

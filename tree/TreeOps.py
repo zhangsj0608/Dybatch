@@ -46,24 +46,25 @@ def extend_tree_encodings(pptree_encoding_list, sentence_list, merged_tree_encod
             encoding is the key, and word is the value in each dict.
     """
     encoding_word_dict_list = list()
+    default_word = '-NAN-'
     for aTree, sentence in zip(pptree_encoding_list, sentence_list):
-        encoding_word_dict = dict()  # encoding-word字典，为一个句子
-        encoding_word_dict_list.append(encoding_word_dict)  # 句子的列表
+        extended_sentence = []  # word列表，为一个句子
+        encoding_word_dict_list.append(extended_sentence)  # 句子的列表
         idx_atree = 0
         for idx_merged in range(len(merged_tree_encoding)):
             if idx_atree == len(aTree):  # atree 到了结尾，将merged tree对应的节点补充上
                 for encoding in merged_tree_encoding[idx_merged:]:
-                    encoding_word_dict[encoding] = None
+                    extended_sentence.append(default_word)
                 break
             if compare_encodings(merged_tree_encoding[idx_merged], aTree[idx_atree]) == -1:  # atree节点更大，遍历
-                candidate_word = None  # 词
+                candidate_word = default_word  # 词
                 encoding = merged_tree_encoding[idx_merged]  # 相等，补长
-                encoding_word_dict[encoding] = candidate_word
+                extended_sentence.append(candidate_word)
             else:
                 candidate_word = sentence[idx_atree]  # 词
                 encoding = merged_tree_encoding[idx_merged]  # 相等，补长
-                # aTree[idx_atree] = encoding
-                encoding_word_dict[encoding] = candidate_word  # 将补长的encoding作为键，词作为值，构建句子字典
+                # 将补长的encoding作为键，词作为值，构建句子字典
+                extended_sentence.append(candidate_word)
                 idx_atree += 1
     return encoding_word_dict_list
 
@@ -89,6 +90,43 @@ def compare_encodings(str0, str1):
             return -2
 
 
+def generate_parent_list(merged_tree_encoding):
+    """
+    生成pplist，对合成的树结构
+    :param merged_tree_encoding: 合成的树的叶节点编码，如['000'，'001'，'01'，'1']
+    :return: pplist, 父节点树
+    """
+    num_words = len(merged_tree_encoding)
+    total_len = num_words * 2 - 1
+    encoding_list = [merged_tree_encoding[i] if i < num_words else '-1' for i in range(total_len)]
+    pp_list = [-1] * total_len
+
+    available = [1 if i < num_words else 0 for i in range(total_len)]  # 1 available, 0 unavailable
+
+    for total in range(num_words, total_len):
+        for i in range(total - 1, -1, -1):
+            if available[i] == 0:
+                continue
+            encoding_l = encoding_list[i]
+            for j in range(i - 1, -1, -1):
+                if available[j] == 0:
+                    continue
+                encoding_r = encoding_list[j]
+                if encoding_l[:-1] == encoding_r[:-1]:
+                    # l 与 r为兄弟节点
+                    pp_list[i] = total
+                    pp_list[j] = total
+                    available[i] = 0
+                    available[j] = 0
+
+                    encoding_list[total] = encoding_l[:-1]
+                    available[total] = 1
+                    break
+            if available[total] == 1:
+                break
+    return pp_list
+
+
 def main():
     tree_list = [['']] * 3
     tree_list[0] = ['0', '100', '101', '110', '1110', '11110', '111110', '111111']
@@ -105,6 +143,12 @@ def main():
 
     for i in extended_tree_list:
         print(i)
+
+
+def main2():
+    encoding_list = ['00', '010', '011', '10', '110', '1110', '11110', '111110', '111111']
+    pp_list = generate_parent_list(encoding_list)
+    print('pp_list:', pp_list)
 
 
 if __name__ == '__main__':

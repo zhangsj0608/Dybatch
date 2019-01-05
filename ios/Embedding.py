@@ -10,7 +10,23 @@ class Embeddings(object):
         self.embedding_matrix = np.zeros(shape=(num_words, dim))
         self.word_to_id = dict()
         self.id_to_word = [None] * num_words
+
+        self._default_embedding = [0.0] * dim
+        self._default_word = '-NAN-'
         self._read_embeddings()
+
+    def word2id(self, word):
+        if word not in self.word_to_id:
+            return self.word_count - 1  # 默认的词汇位于词表末，为'-NAN-'
+        return self.word_to_id.get(word)
+
+    def id2word(self, id):
+        return self.id_to_word[id]
+
+    def word2embedding(self, word):
+        id = self.word2id(word)
+        embedding = self.embedding_matrix[id]
+        return embedding
 
     def _read_embeddings(self):
         """
@@ -30,6 +46,8 @@ class Embeddings(object):
                     idx += 1
                 else:
                     continue
+            self.word_to_id[self._default_word] = idx  # 默认的词汇对应最后一个，应为全0向量
+            self.id_to_word[idx] = self._default_word  # 默认的词汇
 
 
 if __name__ == '__main__':
