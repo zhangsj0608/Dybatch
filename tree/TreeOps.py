@@ -127,6 +127,42 @@ def generate_parent_list(merged_tree_encoding):
     return pp_list
 
 
+def reform_pp_tree(pp_tree):
+    total_len = len(pp_tree)
+    word_len = (total_len + 1) / 2
+    print('word len', word_len)
+    visiable = [1] * int(word_len)
+    visited = [0] * int(word_len)
+    p_s_dict = dict()
+
+    sequence = []
+    count = 0
+    while True:
+        i = 0
+        while i < word_len:
+            if visited[i] == 1:
+                continue
+
+            p = pp_tree[i]
+            if p not in p_s_dict:
+                p_s_dict[p] = i
+            else:
+                sequence.append(p_s_dict[p])
+                sequence.append(i)  # 左右节点加入处理序列
+                p2 = pp_tree[p]
+                p_s_dict[p2] = p  # 更新dict
+                # 两个节点访问过
+                visited[p_s_dict[i]] = 1
+                visited[i] = 1
+                count = count + 1
+            if count == word_len - 1:
+                break
+        if count == word_len - 1:
+            break
+
+    return sequence
+
+
 def main():
     tree_list = [['']] * 3
     tree_list[0] = ['0', '100', '101', '110', '1110', '11110', '111110', '111111']
@@ -151,5 +187,11 @@ def main2():
     print('pp_list:', pp_list)
 
 
+def main3():
+    pp_list = [15, 15, 14, 13, 10, 10, 9, 9, 12, 11, 11, 12, 13, 14, 16, 16, -1]
+    sequence = reform_pp_tree(pp_list)
+    print(sequence)
+
+
 if __name__ == '__main__':
-    main()
+    main3()

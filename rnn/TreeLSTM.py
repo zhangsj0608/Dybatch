@@ -18,17 +18,22 @@ def tree_lstm(narry_lstm_cell, parent_idx, batch_size, words):
     embedding_size = tf.shape(words)[2]
     hidden_size = narry_lstm_cell.hidden_size
 
+    # 父指针节点
     parent_idx_ta = tf.TensorArray(tf.float32, size=total_len, clear_after_read=False)
     parent_idx_ta = parent_idx_ta.unstack(parent_idx)  # 父节点对应的tensor的列表
 
+    # 句子的词列表
     words_ta = tf.TensorArray(tf.float32, size=time_steps, clear_after_read=False)
     words_ta = words_ta.unstack(words)
 
+    # 包含每个节点的h和c
     states_ta = tf.TensorArray(tf.float32, size=time_steps - 1, element_shape=[batch_size, hidden_size * 2],
                                clear_after_read=False)
-
+    # 两个已经是tensor了，利用+one_hot向量来改变值
     available = tf.concat([tf.ones([time_steps], tf.float32), tf.zeros([total_len - time_steps], tf.float32)], 0)
     visited = tf.zeros([total_len], tf.float32)
+
+    # 最小子节点树，确定左右子树， 唯一需要读写
     min_child_ta = tf.TensorArray(tf.float32, size=total_len, element_shape=[], clear_after_read=False)
 
     # 初始化available_ta和min_child_idx_ta
