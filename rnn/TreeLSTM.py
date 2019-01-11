@@ -18,7 +18,7 @@ def tree_lstm(narry_lstm_cell, parent_idx, batch_size, words):
     embedding_size = tf.shape(words)[2]
     hidden_size = narry_lstm_cell.hidden_size
 
-    parent_idx_ta = tf.TensorArray(tf.int32, size=total_len, clear_after_read=False)
+    parent_idx_ta = tf.TensorArray(tf.float32, size=total_len, clear_after_read=False)
     parent_idx_ta = parent_idx_ta.unstack(parent_idx)  # 父节点对应的tensor的列表
 
     words_ta = tf.TensorArray(tf.float32, size=time_steps, clear_after_read=False)
@@ -27,9 +27,9 @@ def tree_lstm(narry_lstm_cell, parent_idx, batch_size, words):
     states_ta = tf.TensorArray(tf.float32, size=time_steps - 1, element_shape=[batch_size, hidden_size * 2],
                                clear_after_read=False)
 
-    available = tf.concat([tf.ones([time_steps], tf.int32), tf.zeros([total_len - time_steps], tf.int32)], 0)
-    visited = tf.zeros([total_len], tf.int32)
-    min_child_ta = tf.TensorArray(tf.int32, size=total_len, element_shape=[], clear_after_read=False)
+    available = tf.concat([tf.ones([time_steps], tf.float32), tf.zeros([total_len - time_steps], tf.float32)], 0)
+    visited = tf.zeros([total_len], tf.float32)
+    min_child_ta = tf.TensorArray(tf.float32, size=total_len, element_shape=[], clear_after_read=False)
 
     # 初始化available_ta和min_child_idx_ta
     def _cond_0(i, *_):
@@ -37,7 +37,7 @@ def tree_lstm(narry_lstm_cell, parent_idx, batch_size, words):
 
     def _body_0(i, _min_child_idx_ta):
         # _available_ta = _available_ta.write(i, 1)
-        _min_child_idx_ta = _min_child_idx_ta.write(i, i)
+        _min_child_idx_ta = _min_child_idx_ta.write(i, tf.cast(i, tf.float32))
         return i + 1, _min_child_idx_ta
 
     _, min_child_ta = tf.while_loop(_cond_0, _body_0, [0, min_child_ta])
@@ -46,13 +46,13 @@ def tree_lstm(narry_lstm_cell, parent_idx, batch_size, words):
     def track_idx(available_, visited_):
 
         def is_available(_idx):
-            not_visited = tf.equal(visited_[_idx], 0)
-            is_seen = tf.equal(available_[_idx], 1)
+            not_visited = tf.equal(visited_[_idx], 0)  # 未计算过
+            is_seen = tf.equal(available_[_idx], 1)  # 可见的
             _available = tf.logical_and(not_visited, is_seen)
             return _available
 
         def cond_1(work_, left_idx_, _):
-            return tf.logical_and(left_idx_ < total_len, tf.logical_not(work_))
+            return tf.logical_and(left_idx_ < total_len, tf.logical_not(work_))  # work表示可用
 
         def body_1(work_, left_idx_, _):
             def cond_2(work__, right_idx__):
@@ -87,12 +87,13 @@ def tree_lstm(narry_lstm_cell, parent_idx, batch_size, words):
         _, l_idx, r_idx = track_idx(available_, visited_)
 
         # 左侧访问过,右侧访问过
-        left_visited = tf.one_hot(l_idx, depth=total_len, dtype=tf.int32)
-        right_visited = tf.one_hot(r_idx, depth=total_len, dtype=tf.int32)
+        left_visited = tf.one_hot(l_idx, depth=total_len, dtype=tf.float32)
+        right_visited = tf.one_hot(r_idx, depth=total_len, dtype=tf.float32)
         visited_ = visited_ + left_visited + right_visited
 
         p = parent_idx_ta.read(l_idx)
-        p_available = tf.one_hot(p, depth=total_len, dtype=tf.int32)
+        p = tf.cast(p, tf.int32)
+        p_available = tf.one_hot(p, depth=total_len, dtype=tf.float32)
         available_ = available_ + p_available
 
         # 左右节点的子节点，确定小的在左侧
@@ -143,8 +144,8 @@ def main():
                      [0, 0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0, 0, 0],
                      [0, 0, 1, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0, 0, 0, 0]]]
 
-    p_pl = tf.placeholder(tf.int32, shape=[None], name='p_pl')
-    w_pl = tf.placeholder(tf.int32, shape=[1, None, 9], name='w_pl')
+    p_pl = tf.placeholder(tf.float32, shape=[None], name='p_pl')
+    w_pl = tf.placeholder(tf.float32, shape=[1, None, 9], name='w_pl')
     with tf.variable_scope('tree_lstm') as scope:
         narry_cell = NarryLSTMCell(hidden_size=10, embedding_size=9)
         narry_cell.build()
