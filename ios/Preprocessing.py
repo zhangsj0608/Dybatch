@@ -7,7 +7,7 @@ ppt_path = '../data/STree.txt'
 dataset_sentences_path = '../data/datasetSentences.txt'
 dataset_split_path = '../data/datasetSplit.txt'
 
-merged_train_path = '../data/train_set.txt'
+merged_train_path = '../data/train_set1.txt'
 merged_test_path = '../data/test_set.txt'
 merged_dev_path = '../data/dev_set.txt'
 
