@@ -128,38 +128,25 @@ def generate_parent_list(merged_tree_encoding):
 
 
 def reform_pp_tree(pp_tree):
+    """
+    将父指针树转换为顺序的构造树，及[left, right]的列表
+    :param pp_tree:
+    :return:列表，每个元素都是[left, right]
+    """
     total_len = len(pp_tree)
-    word_len = (total_len + 1) / 2
-    print('word len', word_len)
-    visiable = [1] * int(word_len)
-    visited = [0] * int(word_len)
+    word_len = int((total_len + 1) / 2)
     p_s_dict = dict()
 
     sequence = []
-    count = 0
-    while True:
-        i = 0
-        while i < word_len:
-            if visited[i] == 1:
-                continue
+    for i in range(word_len):
+        key = pp_tree[i]
+        value = i
+        while key in p_s_dict:
+            sequence.append([p_s_dict[key], value, key])  # 左节点，右节点，父节点
+            value = key  # 新的value
+            key = pp_tree[key]  # 新的key
 
-            p = pp_tree[i]
-            if p not in p_s_dict:
-                p_s_dict[p] = i
-            else:
-                sequence.append(p_s_dict[p])
-                sequence.append(i)  # 左右节点加入处理序列
-                p2 = pp_tree[p]
-                p_s_dict[p2] = p  # 更新dict
-                # 两个节点访问过
-                visited[p_s_dict[i]] = 1
-                visited[i] = 1
-                count = count + 1
-            if count == word_len - 1:
-                break
-        if count == word_len - 1:
-            break
-
+        p_s_dict[key] = value
     return sequence
 
 

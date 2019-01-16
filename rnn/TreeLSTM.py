@@ -1,6 +1,7 @@
 import tensorflow as tf
 
 from rnn.TreeLSTMCell import NarryLSTMCell
+from tree.TreeOps import *
 
 
 def tree_lstm(narry_lstm_cell, parent_idx, batch_size, words):
@@ -142,6 +143,56 @@ def tree_lstm(narry_lstm_cell, parent_idx, batch_size, words):
     return h, c
 
 
+def tree_lstm_v2(lstm_cell, inputs, reformed_pp_tree, batch_size):
+    """
+    构造lstm树
+    :param lstm_cell: lstm单元
+    :param inputs: 输入，形状为[batch_size, time_steps, embedding_size]
+    :param reformed_pp_tree: 父指针树的构造树，形状为[time_steps - 1, 3]
+    :param batch_size: batch size
+    :return: h, c
+    """
+    hidden_size = lstm_cell.hidden_size  # cell的节点state数量
+    state_num = tf.shape(reformed_pp_tree)[0]  # 非叶节点的数量
+    embedding_size = tf.shape(inputs)[2]  # 词向量长度
+    time_steps = tf.shape(inputs)[1]  # 句子长度
+    states_ta = tf.TensorArray(tf.float32, size=state_num, element_shape=[batch_size, hidden_size])  # 存储非叶节点state的列表
+    hidden_ta = tf.TensorArray(tf.float32, size=state_num, element_shape=[batch_size, hidden_size])  # 存储非叶节点的hidden列表
+
+    inputs = tf.transpose(inputs, perm=[1, 0, 2])  # 输入维度1和维度0转换
+
+    def cond(idx, *_):
+        return idx < state_num
+
+    def body(idx, hidden_ta0, states_ta0):
+        l_idx, r_idx, new_idx = reformed_pp_tree[idx][0], reformed_pp_tree[idx][1], reformed_pp_tree[idx][2]
+        left_word, l_s, l_h = tf.cond(l_idx < time_steps,
+                                      lambda: (inputs[l_idx], tf.zeros([batch_size, hidden_size]),
+                                               tf.zeros([batch_size, hidden_size])),
+                                      lambda: (tf.zeros([batch_size, embedding_size]),
+                                               states_ta0.read(l_idx - time_steps),
+                                               hidden_ta0.read(l_idx - time_steps)))
+
+        right_word, r_s, r_h = tf.cond(r_idx < time_steps,
+                                       lambda: (inputs[r_idx], tf.zeros([batch_size, hidden_size]),
+                                                tf.zeros([batch_size, hidden_size])),
+                                       lambda: (tf.zeros([batch_size, embedding_size]),
+                                                states_ta0.read(r_idx - time_steps),
+                                                hidden_ta0.read(r_idx - time_steps)))
+
+        cell_inputs = (left_word, right_word)
+        cell_states_inputs = (l_h, l_s, r_h, r_s)
+        new_h, new_c = lstm_cell.call(cell_inputs, cell_states_inputs)
+
+        hidden_ta0 = hidden_ta0.write(index=new_idx - time_steps, value=new_h)
+        states_ta0 = states_ta0.write(index=new_idx - time_steps, value=new_c)
+        return idx + 1, hidden_ta0, states_ta0
+
+    _, hidden_ta, states_ta = tf.while_loop(cond=cond, body=body, loop_vars=[0, hidden_ta, states_ta])
+
+    return hidden_ta.read(state_num - 1), states_ta.read(state_num - 1)
+
+
 def main():
 
     p_arr = [15, 15, 14, 13, 10, 10, 9, 9, 12, 11, 11, 12, 13, 14, 16, 16, -1]
@@ -163,5 +214,26 @@ def main():
         print('c_:', c_)
 
 
+def main2():
+    p_arr = [15, 15, 14, 13, 10, 10, 9, 9, 12, 11, 11, 12, 13, 14, 16, 16, -1]
+    w_arr = [[[0, 0, 0, 0, 0, 0, 0, 0, 1], [0, 0, 0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 0, 1, 0, 0],
+              [0, 0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0, 0, 0],
+              [0, 0, 1, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0, 0, 0, 0]]]
+
+    reformed_pp = reform_pp_tree(p_arr)
+    p_pl = tf.placeholder(tf.int32, shape=[None, 3], name='p_pl')  # tree节点的输入是int32
+    w_pl = tf.placeholder(tf.float32, shape=[1, None, 9], name='w_pl')
+    with tf.variable_scope('lstm') as scope:
+        lstm_cell = NarryLSTMCell(hidden_size=10, embedding_size=9)
+        lstm_cell.build()
+        h, c = tree_lstm_v2(lstm_cell, w_pl, p_pl, 1)
+
+    with tf.Session() as tfs:
+        tf.global_variables_initializer().run()
+        h_, c_ = tfs.run([h, c], feed_dict={p_pl: reformed_pp, w_pl: w_arr})
+        print('h_:', h_)
+        print('c_:', c_)
+
+
 if __name__ == '__main__':
-    main()
+    main2()
