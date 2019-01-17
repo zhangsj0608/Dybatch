@@ -1,14 +1,15 @@
 # import os, sys
 class Node (object):
 
-    def __init__(self, parent=None, left=None, right=None, is_leaf=False, word=None):
+    def __init__(self, parent=None, left=None, right=None, is_leaf=False, word=None, label=None):
         self._parent = parent
         self._left = left
         self._right = right
         self._is_leaf = is_leaf
         self._binary_encoding = None
         self._word = word
-        self._depth = (1, 1)
+        self._depth = [1, 1]
+        self._label = label
 
     @property
     def left(self):
@@ -61,6 +62,14 @@ class Node (object):
     @depth.setter
     def depth(self, _depth):
         self._depth = _depth
+
+    @property
+    def label(self):
+        return self._label
+
+    @label.setter
+    def label(self, _label):
+        self._label = _label
 
     # def lr_exchange(self):
     #     tmp = self.left
@@ -133,8 +142,6 @@ class BinaryTree(object):
             node.right.binary_encoding = node.binary_encoding + '1'
             self._traverse_from_node_with_lrchange(node.right)
 
-
-
     @property
     def leaves_encodings(self):
         return self._leaves_encodings
@@ -142,7 +149,7 @@ class BinaryTree(object):
 
 class PPTree(BinaryTree):
 
-    def __init__(self, root=None, pp_list=None, word_list=None):
+    def __init__(self, root=None, pp_list=None, word_list=None, label_list=None):
         """
         initialization of pp tree for Stanford Sentiment Treebank sentence sample
         Args:
@@ -151,80 +158,61 @@ class PPTree(BinaryTree):
         """
         super(PPTree, self).__init__(root)
         self.pp_list = pp_list
-        self.word_list = word_list
-        self.tree_node_list = [None] * len(pp_list)  # 树的所有节点，按照pp_list的顺序存放
+        self._word_list = word_list
+        self._label_list = label_list
+        self._node_list = None
 
     def construct_tree(self):
-        assert len(self.pp_list) == 2 * len(self.word_list) - 1, 'the number of tree nodes or number of ' + \
+        assert len(self.pp_list) == 2 * len(self._word_list) - 1, 'the number of tree nodes or number of ' + \
                                                                  'words are not correct'
-        parent_list = [int(i)-1 for i in self.pp_list]  # 父节点的序数（1-n）
-        node_list = self.tree_node_list  # 树节点列表
-        # print(parent_list)
+        pp_list = [int(i)-1 for i in self.pp_list]  # 父节点的序数（1-n）
+        node_list = [None] * len(pp_list)  # 节点列表
 
-        tmp = [(parent_list[i], i) for i in range(len(self.word_list))]  # 长度为句子长，（父节点，子节点）对
-        while len(tmp) > 1:
-            parent_child = [(None, None)] * len(parent_list)  # 长度为所有序列长，（tmp index, child序数）放在每个parent的index
-            for i in range(len(tmp)):
-                parent_index = tmp[i][0]
-                child_index = tmp[i][1]
-                if parent_child[parent_index][1] is None:
-                    parent_child[parent_index] = (i, child_index)  # 左边子树出现在tmp的序数，及左子树节点
-                else:
-                    parent_child_index_right = i  # 右边子树出现在tmp的序数
+        words_len = len(word_list)
+        for i in range(words_len):
+
+            new_node = Node(word=self._word_list[i], label=self._label_list[i], is_leaf=True)
+            node_list[i] = new_node
+
+            c_idx = i  # 当前节点idx
+            while True:
+                p_idx = pp_list[c_idx]  # 父节点idx
+                current_node = node_list[c_idx]
+                current_depth = current_node.depth[0] if current_node.depth[0] > current_node.depth[1] else \
+                    current_node.depth[1]
+                if p_idx == -1:
                     break
+                if node_list[p_idx] is not None:  # 父节点已经访问过，说明当前节点为右节点
+                    parent_node = node_list[p_idx]
+                    parent_node.right = current_node  # 右子节点
+                    parent_node.depth[1] = current_depth + 1
 
-            left_index = parent_child[parent_index][1]  # 左边子树节点
-            right_index = child_index  # 右子树节点
-            # print('Parent index: {0:} left index: {1:} right index: {2:}'.format(parent_index, left_index,
-            # right_index))
+                    current_node.parent = parent_node  # 父节点
+                    c_idx = p_idx
+                else:  # 父节点没访问过
+                    parent_node = Node(label=self._label_list[i])
+                    node_list[p_idx] = parent_node
+                    parent_node.left = current_node  # 左子节点
+                    parent_node.depth[0] = current_depth + 1
 
-            parent_child_index_left = parent_child[parent_index][0]  # 左边子树出现在tmp的序数
-
-            if node_list[parent_index] is None:  # node列表中的父节点
-                parent_node = Node()
-                node_list[parent_index] = parent_node
-
-            if node_list[left_index] is None:  # node列表的左子树
-                left_node = Node(parent=parent_node, is_leaf=True, word=self.word_list[left_index])
-                node_list[left_index] = left_node
-            else:
-                left_node = node_list[left_index]
-
-            if node_list[right_index] is None:  # node列表的右子树
-                right_node = Node(parent=parent_node, is_leaf=True, word=self.word_list[right_index])
-                node_list[right_index] = right_node
-            else:
-                right_node = node_list[right_index]
-
-            # assign left and right children for parent node
-            parent_node.left = left_node
-            parent_node.right = right_node
-
-            # assign the left and right depth for parent node
-            left_depth = left_node.depth[0] if left_node.depth[0] > left_node.depth[1] else left_node.depth[1]
-            right_depth = right_node.depth[0] if right_node.depth[0] > right_node.depth[1] else right_node.depth[1]
-            parent_node.depth = (left_depth + 1, right_depth + 1)
-
-            left_node.parent = parent_node
-            right_node.parent = parent_node
-
-            tmp[parent_child_index_left] = (parent_list[parent_index], parent_index)  # 加入合成节点后
-            tmp.pop(parent_child_index_right)
-
-        self.root = self.tree_node_list[-1]
-        return self.root
+                    current_node.parent = parent_node
+                    break
+        self._node_list = node_list
+        self.root = node_list[-1]  # root
 
 
 if __name__ == '__main__':
     pp_str = '16|15|14|14|12|11|10|10|13|11|12|13|17|15|16|17|0'
     word_str = 'The|Wild|Thornberrys|Movie|is|a|jolly|surprise|.'
+    label_list = range(17)
 
     pp_list = pp_str.split('|')
     word_list = word_str.split('|')
 
-    pp_tree = PPTree(pp_list=pp_list, word_list=word_list)
+    pp_tree = PPTree(pp_list=pp_list, word_list=word_list, label_list=label_list)
     pp_tree.construct_tree()  # 先建树
     pp_tree.traverse_with_lrchange()  # 再遍历
 
+    depth = [n.depth for n in pp_tree._node_list]
     print(pp_tree.leaves_str)
     print(pp_tree.leaves_encodings)
