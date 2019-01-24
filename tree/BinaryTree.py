@@ -168,7 +168,7 @@ class PPTree(BinaryTree):
         pp_list = [int(i)-1 for i in self.pp_list]  # 父节点的序数（1-n）
         node_list = [None] * len(pp_list)  # 节点列表
 
-        words_len = len(word_list)
+        words_len = len(self._word_list)
         for i in range(words_len):
 
             new_node = Node(word=self._word_list[i], label=self._label_list[i], is_leaf=True)

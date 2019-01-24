@@ -115,7 +115,7 @@ def _parse_batch(a_batch, sentence_to_matrix_func):
 
     i = 0
     for sentence, pp_tree in zip(sentence_list, pp_tree_list):
-        tree = PPTree(pp_list=pp_tree, word_list=sentence)
+        tree = PPTree(pp_list=pp_tree, word_list=sentence)  ##############此处还没有加上label 的list
         tree.construct_tree()
         tree.traverse_with_lrchange()  # 左右树枝交换
         pp_trees[i] = tree
