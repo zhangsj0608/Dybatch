@@ -40,7 +40,7 @@ class tf_NarytreeLSTM(object):
             ix= tf.to_int32(tf.not_equal(self.inputs, -1)) * self.inputs
             emb_tree=tf.nn.embedding_lookup(embedding,ix)
             emb_tree=emb_tree*(tf.expand_dims(
-                        tf.to_float(tf.not_equal(self.inputs, -1)),2))
+                        tf.to_float(tf.not_equal(self.inputs, -1)), 2))
 
             return emb_tree
 
@@ -86,36 +86,48 @@ class tf_NarytreeLSTM(object):
             bu = tf.get_variable("bu", [self.output_dim],initializer=
                                  tf.constant_initializer(0.0), regularizer=tf.contrib.layers.l2_regularizer(0.0))
 
-    def process_leafs(self, emb):
+    def process_leafs(self, whole_emb, indices, dense_shape):
+        """
+        句子的词向量作为输入，处理单个句子的叶节点
+        :param whole_emb: 词向量tensor，一个batch的所有句子的所有叶节点向量的列表，形状为[sum(len(sentence)), emb_dim]
+        :param indices: 代表单词位置的tensor，每个元素表示了单词在状态中的位置， 形状为[sum(len(sentence)), 2]
+        :param dense_shape: 构造的状态矩阵的形状[batch_size, len_stn]
+        :return: 所有叶节点的输出状态，含c,h,形状为[batch_size, len_stn, 2 * hidden_dim]
+        """
         # 对输入节点，也就是叶节点进行输入和输出计算，emb是所有叶节点词向量的列表
         with tf.variable_scope("Composition", reuse=True):
             cU = tf.get_variable("cU", [self.emb_dim, 2 * self.hidden_dim])
             cb = tf.get_variable("cb", [4 * self.hidden_dim])
             b = tf.slice(cb, [0], [2*self.hidden_dim])
 
-            def _recurseleaf(x):
+            concat_uo = tf.matmul(whole_emb, cU) + b  # [sum(len(sentence), 2 * hidden_dim)]
+            u, o = tf.split(1, 2, concat_uo)  # 注意U的顺序，为u，o
+            o = tf.nn.sigmoid(o)
+            u = tf.nn.tanh(u)
 
-                concat_uo = tf.matmul(tf.expand_dims(x, 0), cU) + b
-                u, o = tf.split(1, 2, concat_uo)  # 注意U的顺序，为u，o
-                o = tf.nn.sigmoid(o)
-                u = tf.nn.tanh(u)
+            c = u  # tf.squeeze(u)
+            h = o * tf.nn.tanh(c)
 
-                c = u  # tf.squeeze(u)
-                h = o * tf.nn.tanh(c)
+            hc = tf.concat(1, [h, c])
+            hc = tf.squeeze(hc)  # [num_whole_words, 2 * hidden_dim]
 
-                hc = tf.concat(1, [h, c])
-                hc = tf.squeeze(hc)
-                return hc
+        # 将hc整理为状态矩阵
+        # 构造sparse_tensor,indices的形状为[batch_size, len_stn]
+        num_whole_words = tf.shape(indices)[0]
+        sparse_value = tf.range(1.0, num_whole_words + 1)  # 1:n
+        dn_indices = tf.sparse_to_dense(sparse_indices=indices, sparse_values=sparse_value, output_shape=dense_shape)
+        # 构造查询列表
+        zero_values = tf.expand_dims(tf.zeros_like(hc[0]), 0)
+        emb_values = tf.concat([zero_values, hc], 0)
+        states = tf.nn.embedding_lookup(emb_values, dn_indices)  # [batch_size, len_stn, 2 * hidden_dim]
 
-        hc = tf.map_fn(_recurseleaf, emb)
-        return hc
+        return states
 
-    def compute_states(self, emb, idx_batch=0):
+    def compute_states(self, states):
         """
         计算单个句子的状态列表
-        :param emb: 一个batch的词向量，维度为[batch_size, max_len, emb_dim]
-        :param idx_batch: 句子在batch中的编号
-        :return: 输出的张量，维度为[num_leaves + n_inodes, hidden_dim]
+        :param states: 一个batch的初始状态，含h,c,维度为[batch_size, len_stn, 2 * hidden_dim]
+        :return: 输出的张量，只含h，维度为[batch_size, len_stn, hidden_dim]
         """
         num_leaves = tf.squeeze(tf.gather(self.num_leaves, idx_batch))  # 一个句子的长度，句子的id为idx_batch
         n_inodes = tf.gather(self.n_inodes, idx_batch)  # 一个句子中非叶节点的数量
@@ -132,8 +144,8 @@ class tf_NarytreeLSTM(object):
 
         with tf.variable_scope("Composition", reuse=True):
 
-            cW = tf.get_variable("cW", [self.degree*self.hidden_dim,(self.degree+3)*self.hidden_dim])
-            cb = tf.get_variable("cb", [4*self.hidden_dim])
+            cW = tf.get_variable("cW", [self.degree * self.hidden_dim, (self.degree + 3) * self.hidden_dim])
+            cb = tf.get_variable("cb", [4 * self.hidden_dim])
             bu, bo, bi, bf = tf.split(0, 4, cb)
 
             def _recurrence(node_h, node_c, idx_var):
