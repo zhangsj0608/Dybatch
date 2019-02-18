@@ -92,13 +92,14 @@ class tf_NarytreeLSTM(object):
         :param whole_emb: 词向量tensor，一个batch的所有句子的所有叶节点向量的列表，形状为[sum(len(sentence)), emb_dim]
         :param indices: 代表单词位置的tensor，每个元素表示了单词在状态中的位置， 形状为[sum(len(sentence)), 2]
         :param dense_shape: 构造的状态矩阵的形状[batch_size, len_stn]
-        :return: 所有叶节点的输出状态，含c,h,形状为[batch_size, len_stn, 2 * hidden_dim]
+        :return: 所有叶节点的输出状态，含c,h,形状为[batch_size, len_stn, 2 * hidden_dim]，和状态的mask,形状为[batch_size,
+                n_inode, hidden_dim]
         """
         # 对输入节点，也就是叶节点进行输入和输出计算，emb是所有叶节点词向量的列表
         with tf.variable_scope("Composition", reuse=True):
             cU = tf.get_variable("cU", [self.emb_dim, 2 * self.hidden_dim])
             cb = tf.get_variable("cb", [4 * self.hidden_dim])
-            b = tf.slice(cb, [0], [2*self.hidden_dim])
+            b = tf.slice(cb, [0], [2 * self.hidden_dim])
 
             concat_uo = tf.matmul(whole_emb, cU) + b  # [sum(len(sentence), 2 * hidden_dim)]
             u, o = tf.split(1, 2, concat_uo)  # 注意U的顺序，为u，o
@@ -116,29 +117,45 @@ class tf_NarytreeLSTM(object):
         num_whole_words = tf.shape(indices)[0]
         sparse_value = tf.range(1.0, num_whole_words + 1)  # 1:n
         dn_indices = tf.sparse_to_dense(sparse_indices=indices, sparse_values=sparse_value, output_shape=dense_shape)
-        # 构造查询列表
+        # 构造states列表
         zero_values = tf.expand_dims(tf.zeros_like(hc[0]), 0)
-        emb_values = tf.concat([zero_values, hc], 0)
+        emb_values = tf.concat([zero_values, hc], 0)  # 长度为1+num_whole_words
         states = tf.nn.embedding_lookup(emb_values, dn_indices)  # [batch_size, len_stn, 2 * hidden_dim]
+        # 构造mask列表
+        one_values = tf.ones([1, self.hidden_dim])
+        zero_values = tf.onse([1, self.hidden_dim])
+        tiled_ones = tf.reshape(tf.tile(one_values, num_whole_words), [num_whole_words, self.hidden_dim])
+        emb_values = tf.concat([zero_values, tiled_ones], 0)
+        masks = tf.nn.embedding_lookup(emb_values, dn_indices)  # [batch_size, len_stn, hidden_dim]
+        # slice长度[batch_size, num_inodes, hidden_dim]的mask
+        num_leaves = (tf.shape(dense_shape)[1] + 1) / 2
+        num_inodes = tf.shape(dense_shape)[1] - num_leaves
+        masks = tf.slice(masks, [0, num_leaves, 0], [self.batch_size, num_inodes, self.hidden_dim])
+        return states, masks
 
-        return states
-
-    def compute_states(self, states):
+    def compute_states(self, states, treestr, masks):
         """
         计算单个句子的状态列表
         :param states: 一个batch的初始状态，含h,c,维度为[batch_size, len_stn, 2 * hidden_dim]
+        :param treestr: 一个树的结构，长度为树的内部节点，注意顺序，内容为（l_idx, r_idx）
+        :param masks: 一个batch的mask, 只对iNode做mask，维度为[batch_size, n_inodes, hidden_dim]
         :return: 输出的张量，只含h，维度为[batch_size, len_stn, hidden_dim]
         """
-        num_leaves = tf.squeeze(tf.gather(self.num_leaves, idx_batch))  # 一个句子的长度，句子的id为idx_batch
-        n_inodes = tf.gather(self.n_inodes, idx_batch)  # 一个句子中非叶节点的数量
-        # 一个句子中的词向量，注意emb对前n个词进行了提取，说明输入是在后边补了0，维度[num_leaves, emb_dim]
-        embx = tf.gather(tf.gather(emb, idx_batch), tf.range(num_leaves))
-        treestr = tf.gather(tf.gather(self.tree_str, idx_batch), tf.range(n_inodes))  # 句子的内节点，维度[n_inodes, 2]
-        leaf_hc = self.process_leafs(embx)  # 叶节点的输出，维度为[num_leaves, 2 * hidden_dim]
-        leaf_h, leaf_c = tf.split(1, 2, leaf_hc)
+        # num_leaves = tf.squeeze(tf.gather(self.num_leaves, idx_batch))  # 一个句子的长度，句子的id为idx_batch
+        # n_inodes = tf.gather(self.n_inodes, idx_batch)  # 一个句子中非叶节点的数量
+        # # 一个句子中的词向量，注意emb对前n个词进行了提取，说明输入是在后边补了0，维度[num_leaves, emb_dim]
+        # embx = tf.gather(tf.gather(emb, idx_batch), tf.range(num_leaves))
+        # treestr = tf.gather(tf.gather(self.tree_str, idx_batch), tf.range(n_inodes))  # 句子的内节点，维度[n_inodes, 2]
+        # leaf_hc = self.process_leafs(embx)  # 叶节点的输出，维度为[num_leaves, 2 * hidden_dim]
+        states = tf.transpose(states, perm=[1, 0, 2])  # len_stn, batch_size, 2 * hidden_dim
+        masks = tf.transpose(masks, perm=[1, 0, 2])  # n_inodes, batch_size, hidden_dim
+        initial_h, initial_c = tf.split(states, num_or_size_splits=2, axis=2)
 
-        node_h = tf.identity(leaf_h)  # 最后的所有节点的输出，现在只有叶节点部分
-        node_c = tf.identity(leaf_c)
+        n_inodes = tf.shape(treestr)[0]  # 除掉叶子节点的个数
+        num_leaves = n_inodes + 1  # 叶子节点的个数
+        # 最后的所有节点的输出，现在只有叶节点部分 [num_leaves, batch_size, hidden_dim]
+        node_h = tf.slice(initial_h, [0, 0, 0], [self.batch_size, num_leaves, self.hidden_dim])
+        node_c = tf.slice(initial_c, [0, 0, 0], [self.batch_size, num_leaves, self.hidden_dim])
 
         idx_var = tf.constant(0)
 
@@ -150,30 +167,37 @@ class tf_NarytreeLSTM(object):
 
             def _recurrence(node_h, node_c, idx_var):
                 node_info = tf.gather(treestr, idx_var)  # 可能是左右节点的编号
+                mask = tf.gather(masks, idx_var)  # mask
 
-                child_h = tf.gather(node_h, node_info)  # 左右节点的h,维度[2, hidden_dim]
-                child_c = tf.gather(node_c, node_info)  # 左右节点的c,维度[2, hidden_dim]
+                left_h = tf.gather(node_h, node_info[0])  # 左右节点的h,维度[batch_size, hidden_dim]
+                right_h = tf.gather(node_h, node_info[1])
+                child_h = tf.concat([left_h, right_h], axis=1)  # 维度[batch_size, hidden_dim * 2]
 
-                flat_ = tf.reshape(child_h, [-1])  # 维度[hidden_dim * 2]
-                tmp = tf.matmul(tf.expand_dims(flat_, 0), cW)  # 维度为[1, hidden_dim * 5]
-                u, o, i, fl, fr = tf.split(1, 5, tmp)  # 注意w的顺序，即u,o,i,f1,f2
+                left_c = tf.gather(node_c, node_info[0])  # 左右节点的c,维度[batch_size, hidden_dim]
+                right_c = tf.gather(node_c, node_info[1])
 
-                i = tf.nn.sigmoid(i + bi)  # 维度均为[1, hidden_dim]
+                tmp = tf.matmul(child_h, cW)  # 维度为[batch_size, hidden_dim * 5]
+                u, o, i, fl, fr = tf.split(tmp, 5, 1)  # 注意w的顺序，即u,o,i,f1,f2
+
+                i = tf.nn.sigmoid(i + bi)  # 维度均为[batch_size, hidden_dim]
                 o = tf.nn.sigmoid(o + bo)
                 u = tf.nn.tanh(u + bu)
                 fl = tf.nn.sigmoid(fl + bf)
                 fr = tf.nn.sigmoid(fr + bf)
 
-                f = tf.concat(0, [fl, fr])
-                c = i * u + tf.reduce_sum(f * child_c, [0])  # [1, hidden_dim]
-                h = o * tf.nn.tanh(c)  # [1, hidden_dim]
+                c = i * u + fl * left_c + fr * right_c  # [batch_size, hidden_dim]
+                h = o * tf.nn.tanh(c)  # [batch_size, hidden_dim]
 
-                node_h = tf.concat(0, [node_h, h])  # 这里每输出一个状态，则在整个的状态上的末尾加上该状态
+                ini_h = tf.gather(initial_h, idx_var)  # 初始化的h
+                ini_c = tf.gather(initial_c, idx_var)  # 初始化的c
 
-                node_c = tf.concat(0, [node_c, c])
+                new_h = h * (1 - mask) + ini_h * mask  # 去掉每次前部分计算的部分，而加上初始值
+                new_c = c * (1 - mask) + ini_c * mask
+
+                node_h = tf.concat([node_h, new_h], 0)  # 这里每输出一个状态，则在整个的状态上的末尾加上该状态
+                node_c = tf.concat([node_c, new_c], 0)
 
                 idx_var = tf.add(idx_var, 1)
-
                 return node_h, node_c, idx_var
 
             loop_cond = lambda a1, b1, idx_var: tf.less(idx_var, n_inodes)
@@ -181,7 +205,6 @@ class tf_NarytreeLSTM(object):
             loop_vars = [node_h, node_c, idx_var]
             node_h, node_c, idx_var = tf.while_loop(loop_cond, _recurrence,
                                                     loop_vars, parallel_iterations=10)
-
             return node_h
 
     def create_output(self, tree_states):
